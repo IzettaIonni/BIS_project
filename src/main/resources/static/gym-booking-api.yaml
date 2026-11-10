@@ -1,0 +1,1117 @@
+openapi: 3.1.0
+info:
+  title: Gym Booking API
+  version: 0.2.0-draft
+  description: |
+    MVP backend contract for the Gym Booking system.
+
+    Conventions
+    - Base path: /api/v1
+    - Auth: Bearer JWT (access token, 15 min) + refresh token (30 days)
+    - Roles: CLIENT, TRAINER, STAFF (reception), ADMIN
+    - Time: ISO 8601 in UTC (e.g. 2026-11-10T12:00:00Z); the client app converts to local time
+    - IDs: integer (matches DB primary keys)
+    - Errors: application/problem+json (RFC 9457), see `Problem`
+    - Lists: `limit` (default 20, max 100) + `offset`; response wraps items in `{ items, total }`
+    - Fitness devices are a STUB: provider `stub` generates fake metrics on sync
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: local
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Auth
+  - name: Users
+  - name: Trainers
+  - name: Classes
+  - name: Bookings
+  - name: Memberships
+  - name: Access
+    description: QR entry to the gym
+  - name: Devices
+    description: Fitness gadgets (stub provider)
+
+paths:
+  # ───────────────────────── Auth ─────────────────────────
+  /auth/register:
+    post:
+      operationId: register
+      tags: [Auth]
+      summary: Register a new client account
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: Account created, tokens issued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+        '409': { $ref: '#/components/responses/Conflict' }   # email already used
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [Auth]
+      summary: Log in with email + password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/refresh:
+    post:
+      operationId: refreshToken
+      tags: [Auth]
+      summary: Exchange refresh token for a new token pair
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [Auth]
+      summary: Revoke the current refresh token
+      responses:
+        '204': { description: Logged out }
+
+  # ───────────────────────── Users ─────────────────────────
+  /users/me:
+    get:
+      operationId: getMe
+      tags: [Users]
+      summary: Current user profile
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    patch:
+      operationId: updateMe
+      tags: [Users]
+      summary: Update own profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserUpdate' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /users:
+    get:
+      operationId: listUsers
+      tags: [Users]
+      summary: List users (ADMIN)
+      parameters:
+        - in: query
+          name: role
+          schema: { $ref: '#/components/schemas/Role' }
+        - in: query
+          name: q
+          description: Search by name / email / phone
+          schema: { type: string }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserPage' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /users/{userId}/role:
+    patch:
+      operationId: changeUserRole
+      tags: [Users]
+      summary: Change a user's role (ADMIN)
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoleChangeRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ───────────────────────── Trainers ─────────────────────────
+  /trainers:
+    get:
+      operationId: listTrainers
+      tags: [Trainers]
+      summary: List trainers
+      security: []
+      parameters:
+        - in: query
+          name: specialization
+          schema: { type: string, example: yoga }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TrainerPage' }
+    post:
+      operationId: createTrainer
+      tags: [Trainers]
+      summary: Create trainer profile for an existing user (ADMIN)
+      description: Also sets the user's role to TRAINER.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TrainerCreate' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Trainer' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /trainers/{trainerId}:
+    get:
+      operationId: getTrainer
+      tags: [Trainers]
+      summary: Trainer details
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/TrainerId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Trainer' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: updateTrainer
+      tags: [Trainers]
+      summary: Update trainer (ADMIN or the trainer themself)
+      parameters:
+        - $ref: '#/components/parameters/TrainerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TrainerUpdate' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Trainer' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ───────────────────────── Classes (scheduled sessions) ─────────────────────────
+  /classes:
+    get:
+      operationId: listClasses
+      tags: [Classes]
+      summary: Schedule — list class sessions
+      security: []
+      parameters:
+        - in: query
+          name: from
+          schema: { type: string, format: date-time }
+        - in: query
+          name: to
+          schema: { type: string, format: date-time }
+        - in: query
+          name: trainerId
+          schema: { type: integer }
+        - in: query
+          name: type
+          schema: { type: string, example: yoga }
+        - in: query
+          name: onlyAvailable
+          description: Hide full and cancelled sessions
+          schema: { type: boolean, default: false }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GymClassPage' }
+    post:
+      operationId: createClass
+      tags: [Classes]
+      summary: Create a class session (ADMIN, or TRAINER for own sessions)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GymClassCreate' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GymClass' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: Trainer or room already busy at this time
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /classes/{classId}:
+    get:
+      operationId: getClass
+      tags: [Classes]
+      summary: Class session details
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ClassId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GymClass' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: updateClass
+      tags: [Classes]
+      summary: Update session (time, room, capacity, trainer)
+      description: Capacity cannot be set below the current number of active bookings.
+      parameters:
+        - $ref: '#/components/parameters/ClassId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GymClassUpdate' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GymClass' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /classes/{classId}/cancel:
+    post:
+      operationId: cancelClass
+      tags: [Classes]
+      summary: Cancel a session — all its active bookings become CANCELLED
+      parameters:
+        - $ref: '#/components/parameters/ClassId'
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CancelClassRequest' }
+      responses:
+        '200':
+          description: Cancelled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GymClass' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }   # already finished / cancelled
+
+  /classes/{classId}/bookings:
+    get:
+      operationId: listClassBookings
+      tags: [Classes]
+      summary: Attendance list for a session (TRAINER of this class, STAFF, ADMIN)
+      parameters:
+        - $ref: '#/components/parameters/ClassId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Booking' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ───────────────────────── Bookings ─────────────────────────
+  /bookings:
+    post:
+      operationId: createBooking
+      tags: [Bookings]
+      summary: Book a class session (CLIENT)
+      description: |
+        Rules checked on the server, in this order:
+        1. Session exists and status is SCHEDULED and it has not started → else 409 CLASS_NOT_BOOKABLE
+        2. Client has an ACTIVE membership valid on the session date → else 403 NO_ACTIVE_MEMBERSHIP
+        3. Client has no active booking for this session → else 409 ALREADY_BOOKED
+        4. bookedCount < capacity → else 409 CLASS_FULL
+        Steps 3–4 must run in one DB transaction (row lock on the class) to avoid overbooking.
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          description: Optional UUID; repeating the request with the same key returns the same booking
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateBookingRequest' }
+      responses:
+        '201':
+          description: Booked
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /users/me/bookings:
+    get:
+      operationId: listMyBookings
+      tags: [Bookings]
+      summary: My bookings
+      parameters:
+        - in: query
+          name: status
+          schema: { $ref: '#/components/schemas/BookingStatus' }
+        - in: query
+          name: upcoming
+          description: true → only sessions in the future
+          schema: { type: boolean }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BookingPage' }
+
+  /bookings/{bookingId}:
+    get:
+      operationId: getBooking
+      tags: [Bookings]
+      summary: Booking details (owner, STAFF, ADMIN, trainer of the class)
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /bookings/{bookingId}/cancel:
+    post:
+      operationId: cancelBooking
+      tags: [Bookings]
+      summary: Cancel own booking
+      description: Allowed until 2 hours before session start (CANCEL_DEADLINE_PASSED otherwise). ADMIN can always cancel.
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200':
+          description: Cancelled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ───────────────────────── Memberships ─────────────────────────
+  /membership-plans:
+    get:
+      operationId: listMembershipPlans
+      tags: [Memberships]
+      summary: Available plans
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/MembershipPlan' }
+
+  /memberships:
+    post:
+      operationId: buyMembership
+      tags: [Memberships]
+      summary: Buy a membership (payment is stubbed — becomes ACTIVE immediately)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BuyMembershipRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Membership' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }   # overlaps an active membership
+
+  /users/me/memberships:
+    get:
+      operationId: listMyMemberships
+      tags: [Memberships]
+      summary: My memberships (history + current)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Membership' }
+
+  # ───────────────────────── Access (QR) ─────────────────────────
+  /access/qr-token:
+    post:
+      operationId: issueQrToken
+      tags: [Access]
+      summary: Get a short-lived QR token for gym entry (CLIENT)
+      description: |
+        The app renders `token` as a QR code and requests a new one before `expiresAt`
+        (TTL 60 s), so a screenshot cannot be reused later.
+        Token = signed payload { userId, nonce, exp }; the server stores used nonces
+        until expiry so one token admits only once.
+        Returns 403 NO_ACTIVE_MEMBERSHIP if the client has nothing to enter with.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QrToken' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /access/check-in:
+    post:
+      operationId: checkIn
+      tags: [Access]
+      summary: Validate a scanned QR at reception / turnstile (STAFF)
+      description: |
+        Always returns 200 with a decision, because "denied" is a normal business
+        outcome for the scanner, not a protocol error.
+        On GRANTED: a Visit is recorded; if the client has a booking for a session that
+        starts within ±30 min, that booking becomes ATTENDED and is returned.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CheckInRequest' }
+      responses:
+        '200':
+          description: Decision
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckInResult' }
+        '403': { $ref: '#/components/responses/Forbidden' }   # caller is not STAFF
+
+  /access/visits:
+    get:
+      operationId: listVisits
+      tags: [Access]
+      summary: Entry log (STAFF, ADMIN); CLIENT sees only own visits via userId=me
+      parameters:
+        - in: query
+          name: userId
+          schema: { type: string, example: me }
+        - in: query
+          name: from
+          schema: { type: string, format: date-time }
+        - in: query
+          name: to
+          schema: { type: string, format: date-time }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VisitPage' }
+
+  # ───────────────────────── Devices (stub) ─────────────────────────
+  /device-providers:
+    get:
+      operationId: listDeviceProviders
+      tags: [Devices]
+      summary: Supported device providers
+      description: In the MVP only `stub` is enabled; others are listed as `enabled=false` placeholders.
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/DeviceProvider' }
+
+  /users/me/devices:
+    get:
+      operationId: listMyDevices
+      tags: [Devices]
+      summary: My connected devices
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Device' }
+    post:
+      operationId: connectDevice
+      tags: [Devices]
+      summary: Connect a device
+      description: |
+        For `stub` the device is connected instantly.
+        For a real provider this would return an OAuth `authUrl` and status PENDING.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConnectDeviceRequest' }
+      responses:
+        '201':
+          description: Connected
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Device' }
+        '422': { $ref: '#/components/responses/ValidationError' }   # unknown / disabled provider
+
+  /users/me/devices/{deviceId}:
+    delete:
+      operationId: disconnectDevice
+      tags: [Devices]
+      summary: Disconnect a device (keeps already imported metrics)
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '204': { description: Disconnected }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /users/me/devices/{deviceId}/sync:
+    post:
+      operationId: syncDevice
+      tags: [Devices]
+      summary: Pull new data from the device
+      description: Stub generates random but plausible metrics since `lastSyncAt` (or the last 24 h).
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '200':
+          description: Sync done
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SyncResult' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /users/me/metrics:
+    get:
+      operationId: listMyMetrics
+      tags: [Devices]
+      summary: My fitness metrics
+      parameters:
+        - in: query
+          name: type
+          schema: { $ref: '#/components/schemas/MetricType' }
+        - in: query
+          name: from
+          schema: { type: string, format: date-time }
+        - in: query
+          name: to
+          schema: { type: string, format: date-time }
+        - in: query
+          name: bookingId
+          description: Only metrics recorded during this session
+          schema: { type: integer }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Metric' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Limit:
+      in: query
+      name: limit
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Offset:
+      in: query
+      name: offset
+      schema: { type: integer, minimum: 0, default: 0 }
+    UserId:
+      in: path
+      name: userId
+      required: true
+      schema: { type: integer }
+    TrainerId:
+      in: path
+      name: trainerId
+      required: true
+      schema: { type: integer }
+    ClassId:
+      in: path
+      name: classId
+      required: true
+      schema: { type: integer }
+    BookingId:
+      in: path
+      name: bookingId
+      required: true
+      schema: { type: integer }
+    DeviceId:
+      in: path
+      name: deviceId
+      required: true
+      schema: { type: integer }
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid token
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: Role or ownership check failed, or a business rule forbids it
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Resource not found
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: State conflict (see `code`)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    ValidationError:
+      description: Request body failed validation
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    # ── common ──
+    Problem:
+      type: object
+      required: [status, code, title]
+      properties:
+        status: { type: integer, example: 409 }
+        code:
+          type: string
+          description: Machine-readable error code
+          enum:
+            - VALIDATION_FAILED
+            - UNAUTHORIZED
+            - FORBIDDEN
+            - NOT_FOUND
+            - EMAIL_TAKEN
+            - NO_ACTIVE_MEMBERSHIP
+            - CLASS_NOT_BOOKABLE
+            - CLASS_FULL
+            - ALREADY_BOOKED
+            - CANCEL_DEADLINE_PASSED
+            - SCHEDULE_CONFLICT
+            - MEMBERSHIP_OVERLAP
+            - ALREADY_EXISTS
+            - INVALID_STATE
+          example: CLASS_FULL
+        title: { type: string, example: Class is full }
+        detail: { type: string }
+        errors:
+          type: array
+          description: Field errors for VALIDATION_FAILED
+          items:
+            type: object
+            properties:
+              field: { type: string, example: email }
+              message: { type: string, example: must be a valid email }
+
+    Role:
+      type: string
+      enum: [CLIENT, TRAINER, STAFF, ADMIN]
+
+    # ── requests / pages ──
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string }
+    RoleChangeRequest:
+      type: object
+      required: [role]
+      properties:
+        role: { $ref: '#/components/schemas/Role' }
+    CancelClassRequest:
+      type: object
+      properties:
+        reason: { type: string, maxLength: 200 }
+    CreateBookingRequest:
+      type: object
+      required: [classId]
+      properties:
+        classId: { type: integer }
+    BuyMembershipRequest:
+      type: object
+      required: [planId]
+      properties:
+        planId: { type: integer }
+        startDate:
+          type: string
+          format: date
+          description: Defaults to today
+    CheckInRequest:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string }
+        gate:
+          type: string
+          description: Which entrance scanned it
+          example: reception-1
+    ConnectDeviceRequest:
+      type: object
+      required: [provider]
+      properties:
+        provider: { type: string, example: stub }
+        name: { type: string, example: My band }
+    SyncResult:
+      type: object
+      properties:
+        imported: { type: integer, example: 48 }
+        lastSyncAt: { type: string, format: date-time }
+    UserPage:
+      type: object
+      required: [items, total]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/User' } }
+        total: { type: integer, example: 1 }
+    TrainerPage:
+      type: object
+      required: [items, total]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Trainer' } }
+        total: { type: integer, example: 1 }
+    GymClassPage:
+      type: object
+      required: [items, total]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/GymClass' } }
+        total: { type: integer, example: 1 }
+    BookingPage:
+      type: object
+      required: [items, total]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Booking' } }
+        total: { type: integer, example: 1 }
+    VisitPage:
+      type: object
+      required: [items, total]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Visit' } }
+        total: { type: integer, example: 1 }
+    TrainerRef:
+      type: object
+      properties:
+        id: { type: integer, example: 3 }
+        fullName: { type: string }
+    UserSummary:
+      type: object
+      description: Shown to staff on screen to compare face with photo
+      properties:
+        id: { type: integer }
+        fullName: { type: string }
+        photoUrl: { type: string, format: uri }
+
+    # ── auth / users ──
+    RegisterRequest:
+      type: object
+      required: [email, password, fullName]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8 }
+        fullName: { type: string, maxLength: 100 }
+        phone: { type: string, example: '+77011234567' }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+
+    TokenPair:
+      type: object
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        expiresIn: { type: integer, description: Access token lifetime in seconds, example: 900 }
+        user: { $ref: '#/components/schemas/User' }
+
+    User:
+      type: object
+      properties:
+        id: { type: integer, example: 17 }
+        email: { type: string, format: email }
+        fullName: { type: string, example: Aruzhan Bekova }
+        phone: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
+        createdAt: { type: string, format: date-time }
+
+    UserUpdate:
+      type: object
+      properties:
+        fullName: { type: string, maxLength: 100 }
+        phone: { type: string }
+
+    # ── trainers ──
+    Trainer:
+      type: object
+      properties:
+        id: { type: integer, example: 3 }
+        userId: { type: integer }
+        fullName: { type: string }
+        specializations:
+          type: array
+          items: { type: string }
+          example: [yoga, stretching]
+        bio: { type: string }
+        photoUrl: { type: string, format: uri }
+
+    TrainerCreate:
+      type: object
+      required: [userId]
+      properties:
+        userId: { type: integer }
+        specializations: { type: array, items: { type: string } }
+        bio: { type: string }
+
+    TrainerUpdate:
+      type: object
+      properties:
+        specializations: { type: array, items: { type: string } }
+        bio: { type: string }
+        photoUrl: { type: string, format: uri }
+
+    # ── classes ──
+    ClassStatus:
+      type: string
+      enum: [SCHEDULED, CANCELLED, FINISHED]
+
+    GymClass:
+      type: object
+      properties:
+        id: { type: integer, example: 42 }
+        name: { type: string, example: Morning Yoga }
+        type: { type: string, example: yoga }
+        trainer: { $ref: '#/components/schemas/TrainerRef' }
+        startTime: { type: string, format: date-time }
+        durationMin: { type: integer, example: 60 }
+        room: { type: string, example: Hall A }
+        capacity: { type: integer, example: 15 }
+        bookedCount: { type: integer, example: 12 }
+        status: { $ref: '#/components/schemas/ClassStatus' }
+
+    GymClassCreate:
+      type: object
+      required: [name, type, trainerId, startTime, durationMin, room, capacity]
+      properties:
+        name: { type: string }
+        type: { type: string }
+        trainerId: { type: integer }
+        startTime: { type: string, format: date-time }
+        durationMin: { type: integer, minimum: 15, maximum: 240 }
+        room: { type: string }
+        capacity: { type: integer, minimum: 1 }
+
+    GymClassUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        trainerId: { type: integer }
+        startTime: { type: string, format: date-time }
+        durationMin: { type: integer, minimum: 15, maximum: 240 }
+        room: { type: string }
+        capacity: { type: integer, minimum: 1 }
+
+    # ── bookings ──
+    BookingStatus:
+      type: string
+      enum: [BOOKED, CANCELLED, ATTENDED, NO_SHOW]
+      description: |
+        BOOKED → CANCELLED (client/admin) | ATTENDED (QR check-in) | NO_SHOW (job after session end)
+
+    Booking:
+      type: object
+      properties:
+        id: { type: integer, example: 501 }
+        clientId: { type: integer, example: 17 }
+        class: { $ref: '#/components/schemas/GymClass' }
+        status: { $ref: '#/components/schemas/BookingStatus' }
+        bookedAt: { type: string, format: date-time }
+        cancelledAt: { type: [string, 'null'], format: date-time }
+        checkedInAt: { type: [string, 'null'], format: date-time }
+
+    # ── memberships ──
+    MembershipPlan:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string, example: Monthly Unlimited }
+        durationDays: { type: integer, example: 30 }
+        visitLimit:
+          type: [integer, 'null']
+          description: null = unlimited
+          example: null
+        price: { type: integer, description: Price in KZT, example: 25000 }
+
+    Membership:
+      type: object
+      properties:
+        id: { type: integer }
+        clientId: { type: integer }
+        plan: { $ref: '#/components/schemas/MembershipPlan' }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        visitsLeft: { type: [integer, 'null'] }
+        status:
+          type: string
+          enum: [ACTIVE, EXPIRED, FROZEN]
+
+    # ── access ──
+    QrToken:
+      type: object
+      properties:
+        token: { type: string, description: Opaque string to encode in the QR }
+        expiresAt: { type: string, format: date-time }
+
+    CheckInResult:
+      type: object
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [GRANTED, DENIED]
+        reason:
+          type: string
+          description: Present when DENIED
+          enum: [TOKEN_INVALID, TOKEN_EXPIRED, TOKEN_ALREADY_USED, NO_ACTIVE_MEMBERSHIP, NO_VISITS_LEFT]
+        user: { $ref: '#/components/schemas/UserSummary' }
+        membership: { $ref: '#/components/schemas/Membership' }
+        booking:
+          description: Booking marked ATTENDED by this check-in; absent if none
+          allOf:
+            - $ref: '#/components/schemas/Booking'
+        visitId: { type: integer }
+
+    Visit:
+      type: object
+      properties:
+        id: { type: integer }
+        userId: { type: integer }
+        gate: { type: string }
+        checkedInAt: { type: string, format: date-time }
+        bookingId: { type: [integer, 'null'] }
+
+    # ── devices ──
+    DeviceProvider:
+      type: object
+      properties:
+        code: { type: string, example: stub }
+        name: { type: string, example: Stub device (fake data) }
+        enabled: { type: boolean }
+
+    Device:
+      type: object
+      properties:
+        id: { type: integer }
+        provider: { type: string, example: stub }
+        name: { type: string }
+        status:
+          type: string
+          enum: [CONNECTED, PENDING, ERROR, DISCONNECTED]
+        connectedAt: { type: string, format: date-time }
+        lastSyncAt: { type: [string, 'null'], format: date-time }
+
+    MetricType:
+      type: string
+      enum: [HEART_RATE, STEPS, CALORIES, WORKOUT_DURATION]
+
+    Metric:
+      type: object
+      properties:
+        id: { type: integer }
+        deviceId: { type: integer }
+        type: { $ref: '#/components/schemas/MetricType' }
+        value: { type: number, example: 132 }
+        unit: { type: string, example: bpm }
+        recordedAt: { type: string, format: date-time }
