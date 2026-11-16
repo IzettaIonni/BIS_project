@@ -7,7 +7,7 @@ import jakarta.validation.constraints.Min;
 
 public record GymClassUpdate(
         String name,
-        Integer trainerId,
+        Long trainerId,
         OffsetDateTime startTime,
         @Min(15) @Max(240) Integer durationMin,
         String room,

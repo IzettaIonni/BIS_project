@@ -1,16 +1,24 @@
 package kz.gymbooking.controller;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import kz.gymbooking.dto.BookingResponse;
 import kz.gymbooking.dto.CancelClassRequest;
 import kz.gymbooking.dto.GymClassCreate;
+import kz.gymbooking.dto.GymClassResponse;
 import kz.gymbooking.dto.GymClassUpdate;
-import kz.gymbooking.error.ApiException;
-import kz.gymbooking.error.ErrorCode;
+import kz.gymbooking.dto.PageResponse;
+import kz.gymbooking.repository.ClassFilter;
+import kz.gymbooking.security.AuthUser;
+import kz.gymbooking.service.ClassService;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -22,67 +30,57 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping(value = "/classes", produces = "text/plain;charset=UTF-8")
+@RequestMapping("/classes")
 public class ClassController {
 
+    private final ClassService classes;
+
+    public ClassController(ClassService classes) {
+        this.classes = classes;
+    }
+
     @GetMapping
-    public String list(@RequestParam(required = false) OffsetDateTime from,
-                       @RequestParam(required = false) OffsetDateTime to,
-                       @RequestParam(required = false) Integer trainerId,
-                       @RequestParam(required = false) String type,
-                       @RequestParam(defaultValue = "false") boolean onlyAvailable,
-                       @RequestParam(defaultValue = "20") @Min(1) @Max(100) int limit,
-                       @RequestParam(defaultValue = "0") @Min(0) int offset) {
-        return """
-                total: 4
-                #42 Morning Yoga, 2026-11-20T07:00:00Z, Hall A, trainer #3, 12/15, SCHEDULED
-                #43 CrossFit Basics, 2026-11-20T13:00:00Z, Hall B, trainer #4, 8/20, SCHEDULED
-                #44 Evening Stretching, 2026-11-20T15:00:00Z, Hall A, trainer #3, 10/10, SCHEDULED
-                #45 HIIT Express, 2026-11-20T12:00:00Z, Hall B, trainer #4, 0/12, CANCELLED
-                """;
+    public PageResponse<GymClassResponse> list(@RequestParam(required = false) OffsetDateTime from,
+                                               @RequestParam(required = false) OffsetDateTime to,
+                                               @RequestParam(required = false) Long trainerId,
+                                               @RequestParam(required = false) String type,
+                                               @RequestParam(defaultValue = "false") boolean onlyAvailable,
+                                               @RequestParam(defaultValue = "20") @Min(1) @Max(100) int limit,
+                                               @RequestParam(defaultValue = "0") @Min(0) int offset) {
+        ClassFilter filter = new ClassFilter(from == null ? null : from.toInstant(),
+                to == null ? null : to.toInstant(), trainerId, type, onlyAvailable);
+        return classes.list(filter, limit, offset);
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public String create(@Valid @RequestBody GymClassCreate req) {
-        return "id: 100\nname: " + req.name() + "\nstartTime: " + req.startTime()
-                + "\nroom: " + req.room() + "\ncapacity: " + req.capacity() + "\nstatus: SCHEDULED\n";
+    @PreAuthorize("hasAnyRole('ADMIN','TRAINER')")
+    public GymClassResponse create(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody GymClassCreate req) {
+        return classes.create(AuthUser.from(jwt), req);
     }
 
     @GetMapping("/{classId}")
-    public String get(@PathVariable int classId) {
-        if (classId < 42 || classId > 45) {
-            throw new ApiException(HttpStatus.NOT_FOUND, ErrorCode.NOT_FOUND, "Class not found");
-        }
-        return """
-                id: 42
-                name: Morning Yoga
-                type: yoga
-                trainer: #3 Dana Serikova
-                startTime: 2026-11-20T07:00:00Z
-                durationMin: 60
-                room: Hall A
-                capacity: 15
-                bookedCount: 12
-                status: SCHEDULED
-                """;
+    public GymClassResponse get(@PathVariable Long classId) {
+        return classes.get(classId);
     }
 
     @PatchMapping("/{classId}")
-    public String update(@PathVariable int classId, @Valid @RequestBody GymClassUpdate req) {
-        return "id: " + classId + "\nupdated\n";
+    @PreAuthorize("hasAnyRole('ADMIN','TRAINER')")
+    public GymClassResponse update(@AuthenticationPrincipal Jwt jwt, @PathVariable Long classId,
+                                   @Valid @RequestBody GymClassUpdate req) {
+        return classes.update(AuthUser.from(jwt), classId, req);
     }
 
     @PostMapping("/{classId}/cancel")
-    public String cancel(@PathVariable int classId, @Valid @RequestBody(required = false) CancelClassRequest req) {
-        return "id: " + classId + "\nstatus: CANCELLED\n";
+    @PreAuthorize("hasAnyRole('ADMIN','TRAINER')")
+    public GymClassResponse cancel(@AuthenticationPrincipal Jwt jwt, @PathVariable Long classId,
+                                   @Valid @RequestBody(required = false) CancelClassRequest req) {
+        return classes.cancel(AuthUser.from(jwt), classId, req);
     }
 
     @GetMapping("/{classId}/bookings")
-    public String bookings(@PathVariable int classId) {
-        return """
-                #501 client #17, BOOKED
-                #503 client #21, BOOKED
-                """;
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF','TRAINER')")
+    public List<BookingResponse> bookings(@AuthenticationPrincipal Jwt jwt, @PathVariable Long classId) {
+        return classes.listBookings(AuthUser.from(jwt), classId);
     }
 }

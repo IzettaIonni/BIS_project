@@ -10,7 +10,7 @@ import jakarta.validation.constraints.NotNull;
 public record GymClassCreate(
         @NotBlank String name,
         @NotBlank String type,
-        @NotNull Integer trainerId,
+        @NotNull Long trainerId,
         @NotNull OffsetDateTime startTime,
         @NotNull @Min(15) @Max(240) Integer durationMin,
         @NotBlank String room,
