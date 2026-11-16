@@ -2,16 +2,21 @@ package kz.gymbooking.service;
 
 import kz.gymbooking.domain.Booking;
 import kz.gymbooking.domain.GymClass;
+import kz.gymbooking.domain.Membership;
+import kz.gymbooking.domain.MembershipPlan;
 import kz.gymbooking.domain.Trainer;
 import kz.gymbooking.domain.User;
 import kz.gymbooking.dto.BookingResponse;
 import kz.gymbooking.dto.GymClassResponse;
+import kz.gymbooking.dto.MembershipPlanResponse;
+import kz.gymbooking.dto.MembershipResponse;
 import kz.gymbooking.dto.TrainerRef;
 import kz.gymbooking.dto.TrainerResponse;
 import kz.gymbooking.dto.UserResponse;
 import kz.gymbooking.error.ApiException;
 import kz.gymbooking.repository.BookingRepository;
 import kz.gymbooking.repository.GymClassRepository;
+import kz.gymbooking.repository.MembershipPlanRepository;
 import kz.gymbooking.repository.TrainerRepository;
 import kz.gymbooking.repository.UserRepository;
 import org.springframework.stereotype.Component;
@@ -23,13 +28,15 @@ public class ResponseMapper {
     private final TrainerRepository trainers;
     private final GymClassRepository classes;
     private final BookingRepository bookings;
+    private final MembershipPlanRepository plans;
 
     public ResponseMapper(UserRepository users, TrainerRepository trainers, GymClassRepository classes,
-                          BookingRepository bookings) {
+                          BookingRepository bookings, MembershipPlanRepository plans) {
         this.users = users;
         this.trainers = trainers;
         this.classes = classes;
         this.bookings = bookings;
+        this.plans = plans;
     }
 
     public UserResponse user(User u) {
@@ -53,6 +60,17 @@ public class ResponseMapper {
         GymClass c = classes.findById(b.getClassId()).orElseThrow(() -> ApiException.notFound("Class"));
         return new BookingResponse(b.getId(), b.getClientId(), gymClass(c), b.getStatus(), b.getBookedAt(),
                 b.getCancelledAt(), b.getCheckedInAt());
+    }
+
+    public MembershipPlanResponse plan(MembershipPlan p) {
+        return new MembershipPlanResponse(p.getId(), p.getName(), p.getDurationDays(), p.getVisitLimit(),
+                p.getPrice());
+    }
+
+    public MembershipResponse membership(Membership m) {
+        MembershipPlan plan = plans.findById(m.getPlanId()).orElseThrow(() -> ApiException.notFound("Plan"));
+        return new MembershipResponse(m.getId(), m.getClientId(), plan(plan), m.getStartDate(), m.getEndDate(),
+                m.getVisitsLeft(), m.getStatus());
     }
 
     private String trainerName(Trainer t) {

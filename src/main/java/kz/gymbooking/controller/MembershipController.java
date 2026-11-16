@@ -1,44 +1,44 @@
 package kz.gymbooking.controller;
 
+import java.util.List;
+
 import jakarta.validation.Valid;
 import kz.gymbooking.dto.BuyMembershipRequest;
-import kz.gymbooking.error.ApiException;
-import kz.gymbooking.error.ErrorCode;
+import kz.gymbooking.dto.MembershipPlanResponse;
+import kz.gymbooking.dto.MembershipResponse;
+import kz.gymbooking.security.AuthUser;
+import kz.gymbooking.service.MembershipService;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping(produces = "text/plain;charset=UTF-8")
 public class MembershipController {
 
+    private final MembershipService memberships;
+
+    public MembershipController(MembershipService memberships) {
+        this.memberships = memberships;
+    }
+
     @GetMapping("/membership-plans")
-    public String plans() {
-        return """
-                #1 Monthly Unlimited, 30 days, unlimited, 25000 KZT
-                #2 12 Visits, 60 days, 12 visits, 18000 KZT
-                #3 Annual Unlimited, 365 days, unlimited, 220000 KZT
-                """;
+    public List<MembershipPlanResponse> plans() {
+        return memberships.listPlans();
     }
 
     @PostMapping("/memberships")
     @ResponseStatus(HttpStatus.CREATED)
-    public String buy(@Valid @RequestBody BuyMembershipRequest req) {
-        if (req.startDate() == null) {
-            throw new ApiException(HttpStatus.CONFLICT, ErrorCode.MEMBERSHIP_OVERLAP, "You already have an active membership");
-        }
-        return "id: 901\nplanId: " + req.planId() + "\nstartDate: " + req.startDate() + "\nstatus: ACTIVE\n";
+    public MembershipResponse buy(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody BuyMembershipRequest req) {
+        return memberships.buy(AuthUser.from(jwt), req);
     }
 
     @GetMapping("/users/me/memberships")
-    public String myMemberships() {
-        return """
-                #900 Monthly Unlimited, 2026-10-31 - 2026-11-30, ACTIVE
-                #850 12 Visits, 2026-08-22 - 2026-10-21, EXPIRED
-                """;
+    public List<MembershipResponse> mine(@AuthenticationPrincipal Jwt jwt) {
+        return memberships.listMine(AuthUser.from(jwt));
     }
 }

@@ -4,5 +4,5 @@ import java.time.LocalDate;
 
 import jakarta.validation.constraints.NotNull;
 
-public record BuyMembershipRequest(@NotNull Integer planId, LocalDate startDate) {
+public record BuyMembershipRequest(@NotNull Long planId, LocalDate startDate) {
 }

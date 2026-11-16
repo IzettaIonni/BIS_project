@@ -112,7 +112,7 @@ public final class Fixtures {
         m.setId(1L);
         m.setClientId(17L);
         m.setPlanId(1L);
-        LocalDate today = LocalDate.ofInstant(IntegrationTest.NOW, java.time.ZoneOffset.UTC);
+        LocalDate today = LocalDate.ofInstant(IntegrationTest.NOW, java.time.ZoneId.of("Asia/Almaty"));
         m.setStartDate(today.minusDays(5));
         m.setEndDate(today.plusDays(25));
         m.setVisitsLeft(null);
