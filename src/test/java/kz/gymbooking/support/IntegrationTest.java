@@ -104,7 +104,8 @@ public abstract class IntegrationTest {
         when(visits.save(any(Visit.class))).thenAnswer(i -> withId(i.getArgument(0)));
         when(devices.save(any(Device.class))).thenAnswer(i -> withId(i.getArgument(0)));
         when(refreshTokens.save(any(RefreshToken.class))).thenAnswer(i -> withId(i.getArgument(0)));
-        when(usedNonces.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(usedNonces.markUsed(any(), any())).thenReturn(true);
+        when(refreshTokens.revokeIfActive(any())).thenReturn(true);
         when(metrics.saveAll(any())).thenAnswer(i -> {
             List<Metric> list = i.getArgument(0);
             list.forEach(this::withId);

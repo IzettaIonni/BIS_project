@@ -44,6 +44,7 @@ public class TrainerService {
         trainer.setUserId(user.getId());
         trainer.setSpecializations(req.specializations() == null ? java.util.List.of() : req.specializations());
         trainer.setBio(req.bio());
+        // TODO(db): transaction (trainer save + user role save)
         Trainer saved = trainers.save(trainer);
         user.setRole(Role.TRAINER);
         users.save(user);

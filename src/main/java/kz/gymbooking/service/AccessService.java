@@ -16,7 +16,6 @@ import kz.gymbooking.domain.DenyReason;
 import kz.gymbooking.domain.Membership;
 import kz.gymbooking.domain.MembershipStatus;
 import kz.gymbooking.domain.Role;
-import kz.gymbooking.domain.UsedQrNonce;
 import kz.gymbooking.domain.User;
 import kz.gymbooking.domain.Visit;
 import kz.gymbooking.dto.CheckInRequest;
@@ -110,10 +109,10 @@ public class AccessService {
 
         // TODO(db): transaction
         Instant now = clock.instant();
-        UsedQrNonce used = new UsedQrNonce();
-        used.setNonce(claims.nonce());
-        used.setExpiresAt(claims.expiresAt());
-        usedNonces.save(used);
+        // markUsed is atomic: a concurrent scan of the same QR loses here and nothing else is written
+        if (!usedNonces.markUsed(claims.nonce(), claims.expiresAt())) {
+            return denied(DenyReason.TOKEN_ALREADY_USED, null);
+        }
 
         Membership membership = usable.get();
         if (membership.getVisitsLeft() != null) {
@@ -166,7 +165,10 @@ public class AccessService {
         try {
             id = Long.valueOf(userId);
         } catch (NumberFormatException e) {
-            throw ApiException.forbidden();
+            if (!privileged) {
+                throw ApiException.forbidden();
+            }
+            throw ApiException.validation("userId", "must be a number or 'me'");
         }
         if (!privileged && !id.equals(auth.id())) {
             throw ApiException.forbidden();

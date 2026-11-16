@@ -13,7 +13,7 @@ spring:
 app:
   time-zone: Asia/Almaty
   jwt:
-    secret: dev-only-secret-change-me-0123456789abcdef
+    secret: ${APP_JWT_SECRET:dev-only-secret-change-me-0123456789abcdef}
     access-ttl: 15m
     refresh-ttl: 30d
     qr-ttl: 60s

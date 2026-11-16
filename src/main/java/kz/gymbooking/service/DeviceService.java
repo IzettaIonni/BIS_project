@@ -28,6 +28,8 @@ import org.springframework.stereotype.Service;
 public class DeviceService {
 
     private static final String STUB = "stub";
+    private static final Duration FIRST_SYNC_WINDOW = Duration.ofHours(24);
+    private static final Duration MAX_SYNC_WINDOW = Duration.ofDays(7);
     private static final String STUB_NAME = "Stub device (fake data)";
 
     private final DeviceRepository devices;
@@ -84,8 +86,15 @@ public class DeviceService {
             throw ApiException.notFound("Device");
         }
         Instant now = clock.instant();
-        Instant from = d.getLastSyncAt() != null ? d.getLastSyncAt() : now.minus(Duration.ofHours(24));
+        Instant last = d.getLastSyncAt();
+        if (last != null && last.isAfter(now)) {
+            // clock skew: import nothing and keep lastSyncAt monotonic
+            return new SyncResultResponse(0, last);
+        }
+        Instant from = last == null ? now.minus(FIRST_SYNC_WINDOW)
+                : last.isBefore(now.minus(MAX_SYNC_WINDOW)) ? now.minus(MAX_SYNC_WINDOW) : last;
         List<Metric> generated = generator.generate(d, from, now);
+        // TODO(db): transaction (saveAll + device save)
         metrics.saveAll(generated);
         d.setLastSyncAt(now);
         devices.save(d);

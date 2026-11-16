@@ -21,7 +21,6 @@ import kz.gymbooking.domain.GymClass;
 import kz.gymbooking.domain.Membership;
 import kz.gymbooking.domain.MembershipStatus;
 import kz.gymbooking.domain.Role;
-import kz.gymbooking.domain.UsedQrNonce;
 import kz.gymbooking.repository.Page;
 import kz.gymbooking.support.Fixtures;
 import kz.gymbooking.support.IntegrationTest;
@@ -103,7 +102,7 @@ class AccessIT extends IntegrationTest {
         verify(bookings).save(saved.capture());
         org.junit.jupiter.api.Assertions.assertEquals(BookingStatus.ATTENDED, saved.getValue().getStatus());
         org.junit.jupiter.api.Assertions.assertEquals(NOW, saved.getValue().getCheckedInAt());
-        verify(usedNonces).save(any(UsedQrNonce.class));
+        verify(usedNonces).markUsed(any(), any());
         verify(visits).save(any());
     }
 
@@ -112,8 +111,47 @@ class AccessIT extends IntegrationTest {
         bookingAt(NOW.plus(Duration.ofMinutes(40)));
         checkIn(qr())
                 .andExpect(jsonPath("$.decision").value("GRANTED"))
-                .andExpect(jsonPath("$.booking").doesNotExist());
+                .andExpect(jsonPath("$.booking").doesNotHaveJsonPath());
         verify(bookings, never()).save(any());
+    }
+
+    @Test
+    void lostNonceRaceDenied() throws Exception {
+        String token = qr();
+        when(usedNonces.markUsed(any(), any())).thenReturn(false);
+        checkIn(token)
+                .andExpect(jsonPath("$.decision").value("DENIED"))
+                .andExpect(jsonPath("$.reason").value("TOKEN_ALREADY_USED"))
+                .andExpect(jsonPath("$.user").doesNotHaveJsonPath())
+                .andExpect(jsonPath("$.membership").doesNotHaveJsonPath());
+        verify(visits, never()).save(any());
+        verify(memberships, never()).save(any());
+        verify(bookings, never()).save(any());
+    }
+
+    @Test
+    void unlimitedMembershipGrantedWithoutDecrement() throws Exception {
+        Membership unlimited = Fixtures.membership();
+        when(memberships.findByClientIdAndStatusIn(eq(17L), any())).thenReturn(List.of(unlimited));
+        checkIn(qr())
+                .andExpect(jsonPath("$.decision").value("GRANTED"))
+                .andExpect(jsonPath("$.membership.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.membership.visitsLeft").doesNotExist());
+        verify(memberships, never()).save(any());
+        org.junit.jupiter.api.Assertions.assertNull(unlimited.getVisitsLeft());
+        org.junit.jupiter.api.Assertions.assertEquals(MembershipStatus.ACTIVE, unlimited.getStatus());
+    }
+
+    @Test
+    void staffNonNumericUserIdGives422() throws Exception {
+        for (Role role : new Role[] {Role.STAFF, Role.ADMIN}) {
+            mvc.perform(get("/access/visits").param("userId", "abc").with(as(5, role)))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                    .andExpect(jsonPath("$.errors[0].field").value("userId"));
+        }
+        mvc.perform(get("/access/visits").param("userId", "abc").with(as(17, Role.CLIENT)))
+                .andExpect(status().isForbidden());
     }
 
     @Test

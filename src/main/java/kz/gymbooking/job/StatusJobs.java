@@ -36,12 +36,13 @@ public class StatusJobs {
     /** Marks ended SCHEDULED classes FINISHED and their still-BOOKED bookings NO_SHOW. */
     public void finishEndedClasses() {
         for (GymClass gymClass : classes.findScheduledEndedBefore(clock.instant())) {
-            gymClass.setStatus(ClassStatus.FINISHED);
-            classes.save(gymClass);
+            // bookings first, class last: a mid-run failure leaves the class SCHEDULED and the next run retries
             for (Booking booking : bookings.findByClassIdAndStatus(gymClass.getId(), BookingStatus.BOOKED)) {
                 booking.setStatus(BookingStatus.NO_SHOW);
                 bookings.save(booking);
             }
+            gymClass.setStatus(ClassStatus.FINISHED);
+            classes.save(gymClass);
         }
     }
 

@@ -1,6 +1,9 @@
 package kz.gymbooking;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -11,6 +14,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import kz.gymbooking.domain.Membership;
 import kz.gymbooking.domain.MembershipPlan;
@@ -91,6 +95,18 @@ class MembershipsIT extends IntegrationTest {
         // repository filters by status, so an expired-only history yields nothing
         when(memberships.findByClientId(17L)).thenReturn(List.of(expired));
         buy(Map.of("planId", 1)).andExpect(status().isCreated());
+        verify(memberships).findByClientIdAndStatusIn(eq(17L),
+                argThat(s -> s.size() == 2 && s.containsAll(Set.of(MembershipStatus.ACTIVE, MembershipStatus.FROZEN))));
+    }
+
+    @Test
+    void frozenOverlapGives409() throws Exception {
+        Membership frozen = Fixtures.membership();
+        frozen.setStatus(MembershipStatus.FROZEN);
+        when(memberships.findByClientIdAndStatusIn(eq(17L), any())).thenReturn(List.of(frozen));
+        buy(Map.of("planId", 1))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("MEMBERSHIP_OVERLAP"));
     }
 
     @Test

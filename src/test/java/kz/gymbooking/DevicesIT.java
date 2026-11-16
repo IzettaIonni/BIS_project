@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -93,6 +94,26 @@ class DevicesIT extends IntegrationTest {
         mvc.perform(post("/users/me/devices/1/sync").with(as(17, Role.CLIENT)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.imported").value(6));
+    }
+
+    @Test
+    void syncWindowCappedAtSevenDays() throws Exception {
+        connected().setLastSyncAt(NOW.minus(Duration.ofDays(30)));
+        mvc.perform(post("/users/me/devices/1/sync").with(as(17, Role.CLIENT)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.imported").value(7 * 24 * 3));
+    }
+
+    @Test
+    void syncWithFutureLastSyncImportsNothing() throws Exception {
+        Instant future = NOW.plus(Duration.ofHours(3));
+        connected().setLastSyncAt(future);
+        mvc.perform(post("/users/me/devices/1/sync").with(as(17, Role.CLIENT)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.imported").value(0))
+                .andExpect(jsonPath("$.lastSyncAt").value("2026-11-16T13:00:00Z"));
+        verify(devices, never()).save(any());
+        verify(metrics, never()).saveAll(any());
     }
 
     @Test

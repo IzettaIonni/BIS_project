@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.emptyString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -14,12 +15,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 import kz.gymbooking.domain.RefreshToken;
 import kz.gymbooking.domain.Role;
 import kz.gymbooking.domain.User;
+import kz.gymbooking.repository.Page;
 import kz.gymbooking.security.TokenService;
 import kz.gymbooking.support.Fixtures;
 import kz.gymbooking.support.IntegrationTest;
@@ -158,8 +161,68 @@ class AuthIT extends IntegrationTest {
                 .andExpect(jsonPath("$.refreshToken").value(not("raw-token")))
                 .andExpect(jsonPath("$.user.id").value(17));
 
-        assertThat(old.isRevoked()).isTrue();
-        verify(refreshTokens).save(old);
+        verify(refreshTokens).revokeIfActive(1L);
+        verify(refreshTokens, never()).save(old);
+        assertThat(old.isRevoked()).isFalse();
+    }
+
+    @Test
+    void refreshLostRaceGives401() throws Exception {
+        when(refreshTokens.findByTokenHash(tokenService.hash("raw-token")))
+                .thenReturn(Optional.of(Fixtures.refreshToken()));
+        when(users.findById(17L)).thenReturn(Optional.of(Fixtures.client()));
+        when(refreshTokens.revokeIfActive(1L)).thenReturn(false);
+
+        postJson("/auth/refresh", Map.of("refreshToken", "raw-token"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+        verify(refreshTokens, never()).save(any());
+    }
+
+    @Test
+    void passwordOver72BytesGives422() throws Exception {
+        postJson("/auth/register", Map.of("email", "a@example.com", "password", "x".repeat(73),
+                "fullName", "Aruzhan Bekova"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("password"));
+        verify(users, never()).save(any());
+    }
+
+    @Test
+    void multiByteRegisterPasswordOver72BytesGives422() throws Exception {
+        // 40 chars passes @Size but is 80 UTF-8 bytes
+        postJson("/auth/register", Map.of("email", "a@example.com", "password", "ж".repeat(40),
+                "fullName", "Aruzhan Bekova"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("password"));
+        verify(users, never()).save(any());
+    }
+
+    private String loginAs(Role role) throws Exception {
+        User user = storedClient();
+        user.setRole(role);
+        when(users.findByEmailIgnoreCase("aruzhan@example.com")).thenReturn(Optional.of(user));
+        String body = postJson("/auth/login", Map.of("email", "aruzhan@example.com", "password", "secret123"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        return objectMapper.readTree(body).get("accessToken").asString();
+    }
+
+    @Test
+    void realAdminTokenCanListUsers() throws Exception {
+        String access = loginAs(Role.ADMIN);
+        when(users.search(any(), any(), eq(20), eq(0))).thenReturn(new Page<>(List.of(Fixtures.client()), 1));
+        mvc.perform(get("/users").header("Authorization", "Bearer " + access))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(1));
+    }
+
+    @Test
+    void realClientTokenCannotListUsers() throws Exception {
+        String access = loginAs(Role.CLIENT);
+        mvc.perform(get("/users").header("Authorization", "Bearer " + access))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
     }
 
     @Test

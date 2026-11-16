@@ -1,6 +1,7 @@
 package kz.gymbooking;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -34,6 +35,10 @@ class JobsIT extends IntegrationTest {
         when(bookings.findByClassIdAndStatus(ended.getId(), BookingStatus.BOOKED)).thenReturn(List.of(booked));
 
         jobs.finishEndedClasses();
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(bookings, classes);
+        order.verify(bookings).save(any(Booking.class));
+        order.verify(classes).save(any(GymClass.class));
 
         ArgumentCaptor<GymClass> savedClass = ArgumentCaptor.forClass(GymClass.class);
         verify(classes).save(savedClass.capture());

@@ -10,5 +10,11 @@ public interface RefreshTokenRepository {
 
     Optional<RefreshToken> findByTokenHash(String tokenHash);
 
+    /**
+     * Sets revoked only if the token is currently not revoked; returns whether a row changed.
+     * TODO(db): implement as a conditional UPDATE ... WHERE id = ? AND revoked = false.
+     */
+    boolean revokeIfActive(Long id);
+
     void revokeAllByUserId(Long userId);
 }

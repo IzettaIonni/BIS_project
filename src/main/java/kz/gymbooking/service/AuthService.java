@@ -1,5 +1,6 @@
 package kz.gymbooking.service;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 
@@ -25,6 +26,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class AuthService {
 
+    private static final int MAX_PASSWORD_BYTES = 72; // BCrypt limit
     private static final String BAD_CREDENTIALS = "Wrong email or password";
 
     private final UserRepository users;
@@ -47,6 +49,9 @@ public class AuthService {
     }
 
     public TokenPairResponse register(RegisterRequest req) {
+        if (req.password().getBytes(StandardCharsets.UTF_8).length > MAX_PASSWORD_BYTES) {
+            throw ApiException.validation("password", "must be at most 72 bytes");
+        }
         if (users.existsByEmailIgnoreCase(req.email())) {
             throw ApiException.conflict(ErrorCode.EMAIL_TAKEN, "Email is already registered");
         }
@@ -74,8 +79,9 @@ public class AuthService {
                 .orElseThrow(() -> unauthorized("Invalid refresh token"));
         User user = users.findById(stored.getUserId())
                 .orElseThrow(() -> unauthorized("Invalid refresh token"));
-        stored.setRevoked(true);
-        refreshTokens.save(stored);
+        if (!refreshTokens.revokeIfActive(stored.getId())) {
+            throw unauthorized("Invalid refresh token");
+        }
         return pair(user);
     }
 

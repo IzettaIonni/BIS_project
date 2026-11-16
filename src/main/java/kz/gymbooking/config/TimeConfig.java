@@ -22,6 +22,7 @@ public class TimeConfig {
         return ZoneId.of(zone);
     }
 
+    // Must stay a SecureRandom in production: refresh tokens and QR nonces are drawn from it.
     @Bean
     public RandomGenerator randomGenerator() {
         return new SecureRandom();
