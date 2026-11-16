@@ -1,12 +1,20 @@
 package kz.gymbooking.controller;
 
-import java.time.OffsetDateTime;
-import java.util.UUID;
+import java.time.Instant;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import kz.gymbooking.dto.CheckInRequest;
+import kz.gymbooking.dto.CheckInResponse;
+import kz.gymbooking.dto.PageResponse;
+import kz.gymbooking.dto.QrTokenResponse;
+import kz.gymbooking.dto.VisitResponse;
+import kz.gymbooking.security.AuthUser;
+import kz.gymbooking.service.AccessService;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -15,35 +23,34 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping(value = "/access", produces = "text/plain;charset=UTF-8")
+@RequestMapping("/access")
 public class AccessController {
 
+    private final AccessService access;
+
+    public AccessController(AccessService access) {
+        this.access = access;
+    }
+
     @PostMapping("/qr-token")
-    public String qrToken() {
-        return "token: qr-" + UUID.randomUUID() + "\nexpiresAt: " + OffsetDateTime.now().plusSeconds(60) + "\n";
+    @PreAuthorize("hasRole('CLIENT')")
+    public QrTokenResponse qrToken(@AuthenticationPrincipal Jwt jwt) {
+        return access.issueQr(AuthUser.from(jwt));
     }
 
     @PostMapping("/check-in")
-    public String checkIn(@Valid @RequestBody CheckInRequest req) {
-        return switch (req.token()) {
-            case "expired" -> "decision: DENIED\nreason: TOKEN_EXPIRED\n";
-            case "used" -> "decision: DENIED\nreason: TOKEN_ALREADY_USED\n";
-            default -> req.token().startsWith("qr-")
-                    ? "decision: GRANTED\nuser: #17 Aruzhan Bekova\nbooking: #501 ATTENDED\nvisitId: 7001\n"
-                    : "decision: DENIED\nreason: TOKEN_INVALID\n";
-        };
+    @PreAuthorize("hasRole('STAFF')")
+    public CheckInResponse checkIn(@Valid @RequestBody CheckInRequest req) {
+        return access.checkIn(req);
     }
 
     @GetMapping("/visits")
-    public String visits(@RequestParam(required = false) String userId,
-                         @RequestParam(required = false) OffsetDateTime from,
-                         @RequestParam(required = false) OffsetDateTime to,
-                         @RequestParam(defaultValue = "20") @Min(1) @Max(100) int limit,
-                         @RequestParam(defaultValue = "0") @Min(0) int offset) {
-        return """
-                total: 2
-                #7000 user #17, reception-1, 2026-11-08T18:30:00Z
-                #6990 user #17, reception-1, 2026-11-05T06:50:00Z, booking #498
-                """;
+    public PageResponse<VisitResponse> visits(@AuthenticationPrincipal Jwt jwt,
+                                              @RequestParam(required = false) String userId,
+                                              @RequestParam(required = false) Instant from,
+                                              @RequestParam(required = false) Instant to,
+                                              @RequestParam(defaultValue = "20") @Min(1) @Max(100) int limit,
+                                              @RequestParam(defaultValue = "0") @Min(0) int offset) {
+        return access.listVisits(AuthUser.from(jwt), userId, from, to, limit, offset);
     }
 }

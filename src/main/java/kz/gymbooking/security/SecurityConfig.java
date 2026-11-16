@@ -90,7 +90,7 @@ public class SecurityConfig {
         return decoder;
     }
 
-    private static SecretKeySpec secretKey(JwtProperties props) {
+    static SecretKeySpec secretKey(JwtProperties props) {
         byte[] bytes = props.getSecret().getBytes(StandardCharsets.UTF_8);
         if (bytes.length < 32) {
             throw new IllegalStateException("app.jwt.secret must be at least 32 bytes");
