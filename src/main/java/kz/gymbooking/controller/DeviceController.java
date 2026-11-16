@@ -1,69 +1,72 @@
 package kz.gymbooking.controller;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 
 import jakarta.validation.Valid;
-import kz.gymbooking.dto.ConnectDeviceRequest;
 import kz.gymbooking.domain.MetricType;
-import kz.gymbooking.error.ApiException;
-import kz.gymbooking.error.ErrorCode;
+import kz.gymbooking.dto.ConnectDeviceRequest;
+import kz.gymbooking.dto.DeviceProviderResponse;
+import kz.gymbooking.dto.DeviceResponse;
+import kz.gymbooking.dto.MetricResponse;
+import kz.gymbooking.dto.SyncResultResponse;
+import kz.gymbooking.security.AuthUser;
+import kz.gymbooking.service.DeviceService;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping(produces = "text/plain;charset=UTF-8")
 public class DeviceController {
 
+    private final DeviceService devices;
+
+    public DeviceController(DeviceService devices) {
+        this.devices = devices;
+    }
+
     @GetMapping("/device-providers")
-    public String providers() {
-        return """
-                stub, Stub device (fake data), enabled
-                garmin, Garmin Connect, disabled
-                fitbit, Fitbit, disabled
-                """;
+    public List<DeviceProviderResponse> providers() {
+        return devices.providers();
     }
 
     @GetMapping("/users/me/devices")
-    public String myDevices() {
-        return "#11 stub, My band, CONNECTED, last sync 2026-11-10T09:00:00Z\n";
+    public List<DeviceResponse> myDevices(@AuthenticationPrincipal Jwt jwt) {
+        return devices.listMine(AuthUser.from(jwt));
     }
 
     @PostMapping("/users/me/devices")
     @ResponseStatus(HttpStatus.CREATED)
-    public String connect(@Valid @RequestBody ConnectDeviceRequest req) {
-        if (!req.provider().equals("stub")) {
-            throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, ErrorCode.VALIDATION_FAILED, "Only 'stub' provider is enabled");
-        }
-        return "id: 12\nprovider: stub\nname: " + req.name() + "\nstatus: CONNECTED\n";
+    public DeviceResponse connect(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody ConnectDeviceRequest req) {
+        return devices.connect(AuthUser.from(jwt), req);
     }
 
     @DeleteMapping("/users/me/devices/{deviceId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void disconnect(@PathVariable int deviceId) {
+    public void disconnect(@AuthenticationPrincipal Jwt jwt, @PathVariable Long deviceId) {
+        devices.disconnect(AuthUser.from(jwt), deviceId);
     }
 
     @PostMapping("/users/me/devices/{deviceId}/sync")
-    public String sync(@PathVariable int deviceId) {
-        return "imported: 48\nlastSyncAt: " + OffsetDateTime.now() + "\n";
+    public SyncResultResponse sync(@AuthenticationPrincipal Jwt jwt, @PathVariable Long deviceId) {
+        return devices.sync(AuthUser.from(jwt), deviceId);
     }
 
     @GetMapping("/users/me/metrics")
-    public String metrics(@RequestParam(required = false) MetricType type,
-                          @RequestParam(required = false) OffsetDateTime from,
-                          @RequestParam(required = false) OffsetDateTime to,
-                          @RequestParam(required = false) Integer bookingId) {
-        return """
-                HEART_RATE 132 bpm, 2026-11-05T07:30:00Z
-                CALORIES 410 kcal, 2026-11-05T08:00:00Z
-                STEPS 8450 steps, 2026-11-09T20:00:00Z
-                """;
+    public List<MetricResponse> metrics(@AuthenticationPrincipal Jwt jwt,
+                                        @RequestParam(required = false) MetricType type,
+                                        @RequestParam(required = false) OffsetDateTime from,
+                                        @RequestParam(required = false) OffsetDateTime to,
+                                        @RequestParam(required = false) Long bookingId) {
+        return devices.metrics(AuthUser.from(jwt), type, from == null ? null : from.toInstant(),
+                to == null ? null : to.toInstant(), bookingId);
     }
 }
