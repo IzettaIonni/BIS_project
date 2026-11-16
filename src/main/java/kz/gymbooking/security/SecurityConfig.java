@@ -2,6 +2,7 @@ package kz.gymbooking.security;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
 
@@ -80,9 +81,9 @@ public class SecurityConfig {
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(secretKey(props))
                 .macAlgorithm(MacAlgorithm.HS256)
                 .build();
-        JwtTimestampValidator timestamps = new JwtTimestampValidator();
+        JwtTimestampValidator timestamps = new JwtTimestampValidator(Duration.ZERO);
         timestamps.setClock(clock);
-        OAuth2TokenValidator<Jwt> access = jwt -> "access".equals(jwt.getClaimAsString("typ"))
+        OAuth2TokenValidator<Jwt> access = jwt -> AuthUser.isValidAccessToken(jwt)
                 ? OAuth2TokenValidatorResult.success()
                 : OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token", "Not an access token", null));
         decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(timestamps, access));
