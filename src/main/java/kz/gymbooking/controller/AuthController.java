@@ -5,6 +5,7 @@ import kz.gymbooking.dto.LoginRequest;
 import kz.gymbooking.dto.RefreshRequest;
 import kz.gymbooking.dto.RegisterRequest;
 import kz.gymbooking.error.ApiException;
+import kz.gymbooking.error.ErrorCode;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -26,7 +27,7 @@ public class AuthController {
     @ResponseStatus(HttpStatus.CREATED)
     public String register(@Valid @RequestBody RegisterRequest req) {
         if (req.email().equals("taken@example.com")) {
-            throw new ApiException(HttpStatus.CONFLICT, "EMAIL_TAKEN", "Email is already registered");
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCode.EMAIL_TAKEN, "Email is already registered");
         }
         return TOKENS + "user: #18 " + req.fullName() + ", " + req.email() + ", CLIENT\n";
     }
@@ -34,7 +35,7 @@ public class AuthController {
     @PostMapping("/login")
     public String login(@Valid @RequestBody LoginRequest req) {
         if (req.password().equals("wrong")) {
-            throw new ApiException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Wrong email or password");
+            throw new ApiException(HttpStatus.UNAUTHORIZED, ErrorCode.UNAUTHORIZED, "Wrong email or password");
         }
         return TOKENS + "user: #17 Aruzhan Bekova, aruzhan@example.com, CLIENT\n";
     }

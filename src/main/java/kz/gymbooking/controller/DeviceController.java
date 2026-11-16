@@ -4,8 +4,9 @@ import java.time.OffsetDateTime;
 
 import jakarta.validation.Valid;
 import kz.gymbooking.dto.ConnectDeviceRequest;
-import kz.gymbooking.dto.MetricType;
+import kz.gymbooking.domain.MetricType;
 import kz.gymbooking.error.ApiException;
+import kz.gymbooking.error.ErrorCode;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -39,7 +40,7 @@ public class DeviceController {
     @ResponseStatus(HttpStatus.CREATED)
     public String connect(@Valid @RequestBody ConnectDeviceRequest req) {
         if (!req.provider().equals("stub")) {
-            throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, "VALIDATION_FAILED", "Only 'stub' provider is enabled");
+            throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, ErrorCode.VALIDATION_FAILED, "Only 'stub' provider is enabled");
         }
         return "id: 12\nprovider: stub\nname: " + req.name() + "\nstatus: CONNECTED\n";
     }

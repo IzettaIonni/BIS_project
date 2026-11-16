@@ -3,9 +3,10 @@ package kz.gymbooking.controller;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import kz.gymbooking.dto.Role;
+import kz.gymbooking.domain.Role;
 import kz.gymbooking.dto.RoleChangeRequest;
 import kz.gymbooking.dto.UserUpdate;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -36,6 +37,7 @@ public class UserController {
     }
 
     @GetMapping
+    @PreAuthorize("hasRole('ADMIN')")
     public String list(@RequestParam(required = false) Role role,
                        @RequestParam(required = false) String q,
                        @RequestParam(defaultValue = "20") @Min(1) @Max(100) int limit,

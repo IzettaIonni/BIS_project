@@ -3,6 +3,7 @@ package kz.gymbooking.controller;
 import jakarta.validation.Valid;
 import kz.gymbooking.dto.BuyMembershipRequest;
 import kz.gymbooking.error.ApiException;
+import kz.gymbooking.error.ErrorCode;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -28,7 +29,7 @@ public class MembershipController {
     @ResponseStatus(HttpStatus.CREATED)
     public String buy(@Valid @RequestBody BuyMembershipRequest req) {
         if (req.startDate() == null) {
-            throw new ApiException(HttpStatus.CONFLICT, "MEMBERSHIP_OVERLAP", "You already have an active membership");
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCode.MEMBERSHIP_OVERLAP, "You already have an active membership");
         }
         return "id: 901\nplanId: " + req.planId() + "\nstartDate: " + req.startDate() + "\nstatus: ACTIVE\n";
     }

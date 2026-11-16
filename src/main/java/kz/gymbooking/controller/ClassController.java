@@ -9,6 +9,7 @@ import kz.gymbooking.dto.CancelClassRequest;
 import kz.gymbooking.dto.GymClassCreate;
 import kz.gymbooking.dto.GymClassUpdate;
 import kz.gymbooking.error.ApiException;
+import kz.gymbooking.error.ErrorCode;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -51,7 +52,7 @@ public class ClassController {
     @GetMapping("/{classId}")
     public String get(@PathVariable int classId) {
         if (classId < 42 || classId > 45) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Class not found");
+            throw new ApiException(HttpStatus.NOT_FOUND, ErrorCode.NOT_FOUND, "Class not found");
         }
         return """
                 id: 42

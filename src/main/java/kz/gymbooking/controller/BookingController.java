@@ -5,9 +5,10 @@ import java.util.UUID;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import kz.gymbooking.dto.BookingStatus;
+import kz.gymbooking.domain.BookingStatus;
 import kz.gymbooking.dto.CreateBookingRequest;
 import kz.gymbooking.error.ApiException;
+import kz.gymbooking.error.ErrorCode;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -28,9 +29,9 @@ public class BookingController {
     public String create(@Valid @RequestBody CreateBookingRequest req,
                          @RequestHeader(value = "Idempotency-Key", required = false) UUID idempotencyKey) {
         switch (req.classId()) {
-            case 42 -> throw new ApiException(HttpStatus.CONFLICT, "ALREADY_BOOKED", "You already booked this class");
-            case 44 -> throw new ApiException(HttpStatus.CONFLICT, "CLASS_FULL", "Class is full");
-            case 45 -> throw new ApiException(HttpStatus.CONFLICT, "CLASS_NOT_BOOKABLE", "Class is cancelled");
+            case 42 -> throw new ApiException(HttpStatus.CONFLICT, ErrorCode.ALREADY_BOOKED, "You already booked this class");
+            case 44 -> throw new ApiException(HttpStatus.CONFLICT, ErrorCode.CLASS_FULL, "Class is full");
+            case 45 -> throw new ApiException(HttpStatus.CONFLICT, ErrorCode.CLASS_NOT_BOOKABLE, "Class is cancelled");
             default -> {
             }
         }
